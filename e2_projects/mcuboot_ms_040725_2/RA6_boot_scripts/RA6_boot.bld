@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ddscBootloader>
+    <symbols>
+        <symbol name="FSP_BOOTABLE_IMAGE" value="0x00000001"/>
+        <symbol name="RAM_NS_START" value="0x20040000"/>
+        <symbol name="FLASH_NS_START" value="0x00060000"/>
+        <symbol name="FLASH_IMAGE_END" value="0x00060000"/>
+        <symbol name="FLASH_NS_IMAGE_START" value="0x00060000"/>
+        <symbol name="FLASH_NSC_START" value="0x00060000"/>
+        <symbol name="RAM_NSC_START" value="0x20040000"/>
+        <symbol name="FLASH_IMAGE_LENGTH" value="0x0003FE00"/>
+        <symbol name="XIP_SECONDARY_FLASH_IMAGE_END" value="0x000A0000"/>
+        <symbol name="XIP_SECONDARY_FLASH_IMAGE_START" value="0x00060200"/>
+        <symbol name="FLASH_IMAGE_START" value="0x00020200"/>
+        <symbol name="FLASH_IMAGE_START" value="0x00060000" security="n"/>
+        <symbol name="FSP_BOOTABLE_IMAGE" value="0x00000001" security="n"/>
+        <symbol name="FLASH_IMAGE_LENGTH" value="0x00060000" security="n"/>
+    </symbols>    
+    <images>
+    </images>
+</ddscBootloader>

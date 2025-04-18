@@ -1,0 +1,10 @@
+log logs/erase_qspi_quick.log
+Exec DEVICE_SelectLoader BankAddr=0x60000000 Loader=CLK@P305_nCS@P306_D0@P307_D1@P308_D2@P309_D3@P310
+Device R7FA6M4AF
+SelectInterface SWD
+Speed 4000
+Connect
+Exec EnableEraseAllFlashBanks
+erase 0x60000000 0x600FFFFF
+erase 0x61000000 0x611FFFFF
+Exit

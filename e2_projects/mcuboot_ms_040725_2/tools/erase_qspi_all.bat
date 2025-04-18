@@ -1,0 +1,2 @@
+jlink erase_qspi
+pause
