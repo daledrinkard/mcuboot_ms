@@ -1,8 +1,0 @@
-Exec DEVICE_SelectLoader Loader=CLK@P305_nCS@P306_D0@P307_D1@P308_D2@P309_D3@P310
-Device R7FA6M4AF
-SelectInterface SWD
-Speed 4000
-Connect
-LoadFile bins/primary.bin 0x60800000
-Exit
-

@@ -1,8 +1,0 @@
-log logs/get_qspi_image.log
-Exec DEVICE_SelectLoader BankAddr=0x60000000 Loader=CLK@P305_nCS@P306_D0@P307_D1@P308_D2@P309_D3@P310
-Device R7FA6M4AF
-SelectInterface SWD
-Speed 4000
-Connect
-SaveBin bins/qspi_image_data.bin 0x60800000 0x00040000
-Exit

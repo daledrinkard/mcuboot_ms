@@ -1,2 +1,0 @@
-jlink get_qspi_image
-pause

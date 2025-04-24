@@ -1,0 +1,314 @@
+
+Rename and import a bootloader project,primary and secondary project pair
+    (import from mcuboot_ms\lab\lab_resources\MCUboot_Encryption_QSPI_Solutions.zip)
+     * bootloader --> x2RA6_boot
+	 * primary    --> RA6_primary_L
+	 * secondary  --> RA6_update_L
+
+BOOTLOADER:
+Resize the Flash Layout in the bootloader configuration,  MCUboot module
+    Bootloader Flash Area Size(bytes)  0x20000
+	Image1 Header size 0x20000
+	Image1 Flash Area Size (Bytes) 0x40000
+	Scratch Flash Area Size (Bytes) 0x40000
+Disable MCUboot encryption
+Set the MCUboot logging debugugging Level to Info
+
+APPLICATIONS:
+    * Create a new build configuration named Bootable and base it off Debug.  Set it as active.
+
+    * change properties->C/C++ Build->Build Variables to 
+	     ${workspace_loc:x2RA6_boot}/Debug/x2RA6_boot.bld
+    * change the Environment 
+	     DELETE  MCUBOOT_ENC_KEY
+		 MCUBOOT_SIGNING_KEY$ -> {workspace_loc:x2RA6_boot}/ra/mcu-tools/MCUboot/root-ec-p256.pem
+    * edit the MCUboot image utilities (in the update only)
+		 ../../x2RA6_boot/ra_cfg/mcu-tools/include/mcuboot_config/mcuboot_config.h
+		 ../../x2RA6_boot/ra_cfg/mcu-tools/include/sysflash/sysflash.h
+		 ../../x2RA6_boot/ra_cfg/mcu-tools/include/mcuboot_config/mcuboot_logging.h
+ALL:
+Add printf
+  1) Virtual console:  (only useful in debug, causes things to hang if not debugging)
+      * add extern void initialise_monitor_handles(void); and call it.
+	  * Renesas views->Debug->Renesas debug virtual console
+	  * Other linker flags: --specs=rdimon.specs
+  2) SCI9:
+      * add SCI_UART: port9 P109 P110 name=g_printf_uart callback=printf_uart_callback
+	  * copy the printf_redirect folder into the project
+	  * Other linker flags: --specs=nosys.specs
+
+Build the bootloader, then the primary and then the update projects.
+
+
+INITIAL DEBUGGING:
+Set the Debug Launch configuration startup for x2RA6_boot project.
+      * the x2RA6_boot elf image and symbols
+	  * ${workspace_loc:\RA6_primary_L\Bootable\RA6_primary_L.elf}    [Symbols only]
+	  * ${workspace_loc:\RA6_primary_L\Bootable\RA6_primary_L.bin.signed}  [Raw binary]  offset=020000
+<erase the QSPI>
+Debug x2RA6_boot   verify prints in virtual console  (or on the SCI9)
+[INF] Primary image: magic=good, swap_type=0x1, copy_done=0x3, image_ok=0x3
+[INF] Scratch: magic=unset, swap_type=0x1, copy_done=0x3, image_ok=0x3
+[INF] Boot source: primary slot
+[INF] Image index: 0, Swap type: none
+pause the debugger, use the load ancillary data feature to load the RA6_update_L/Bootable/RA6_update_L.bin.signed file to 0x60000000
+restart. verify
+[INF] Primary image: magic=good, swap_type=0x1, copy_done=0x3, image_ok=0x3
+[INF] Scratch: magic=unset, swap_type=0x1, copy_done=0x3, image_ok=0x3
+[INF] Boot source: primary slot
+[INF] Image index: 0, Swap type: test
+[INF] Starting swap using scratch algorithm.
+
+====================================================================================================
+Modify primary and update applications to add "resource" data.
+
+x2RA6_boot modifications:
+  1) Take control of the following files/folders by copying them to src and excluding thier native copies:
+      * ra_cfg/mcu-tools (folder) 
+      * ra/mcu-tools/MCUboot/boot/bootutil/src/bootutil_public.c  
+	  * ra/fsp/src/rm_mcuboot_port/flash_map.c 
+
+        change path in C/C++ includes in bootloader properties now that these files have moved
+	    "${workspace_loc:/${ProjName}/ra_cfg/mcu-tools/include/mcuboot_config}" to 
+		"${workspace_loc:/${ProjName}/src/mcu-tools/include/mcuboot_config}"
+
+	    "${workspace_loc:/${ProjName}/ra_cfg/mcu-tools/include/sysflash}" to
+	    "${workspace_loc:/${ProjName}/src/mcu-tools/include/sysflash}"
+
+  2) Edit src/mcu-tools/include/mcuboot_config/mcuboot_config.h 
+      * find this:
+	     #define MCUBOOT_MAX_IMG_SECTORS    ((RM_MCUBOOT_LARGEST_SECTOR) / \
+                                       FLASH_AREA_IMAGE_SECTOR_SIZE)
+      * change it to this:
+	     #ifndef MCUBOOT_MAX_IMG_SECTORS
+		 #define MCUBOOT_MAX_IMG_SECTORS    ((RM_MCUBOOT_LARGEST_SECTOR) / \
+                                       FLASH_AREA_IMAGE_SECTOR_SIZE)
+         #endif
+  3) Edit src/flash_map.c
+      * find this:
+	     static const struct flash_area flash_map[] =
+
+	  * change it to this:
+	     static struct flash_area flash_map[3];
+		 static const struct flash_area FM1[] =
+      * duplicate the FM1 structure and call it FM2
+	  * modify the FM2 structure's first 2 entries.
+	   {
+         .fa_id        = FLASH_AREA_0_ID,
+         .fa_device_id = FLASH_DEVICE_EXTERNAL_FLASH,
+         .fa_off       = FLASH_AREA_RESOURCES_OFFSET,
+         .fa_size      = FLASH_AREA_RESOURCES_SIZE,
+       },
+      {
+         .fa_id = FLASH_AREA_2_ID,
+         .fa_device_id = FLASH_DEVICE_EXTERNAL_FLASH,
+         .fa_off  = FLASH_AREA_RESOURCES_UPDATE_OFFSET + FLASH_AREA_2_SIZE,
+         .fa_size = FLASH_AREA_RESOURCESUPDATE_SIZE,
+      },
+	  
+	  * create the following public function.
+        void set_flash_index(int idx)
+        {
+           switch (idx) {
+             case 0: memcpy(&flash_map[0],&FM1,sizeof(flash_map)); break;
+             case 1: memcpy(&flash_map[0],&FM2,sizeof(flash_map)); break;
+           }
+        }
+	  
+  4)  create a "my_mcuboot_config.h" file in the src folder.
+      * the contents are:
+	  
+#define XSPI_AREA_MCUBOOT_OFFSET 0x00800000  //<-- puts MCUboot partition at 8MB because of issues with jlink
+#define RESOURCES_SIZE  (1024*1024)
+#define RESOURCE_IMAGE_SECTORS (RESOURCE_SIZE / BSP_FEATURE_FLASH_HP_CF_REGION1_BLOCK_SIZE)
+      /** Area that is linked in the application **/
+#define FLASH_AREA_RESOURCES_OFFSET (BSP_FEATURE_QSPI_DEVICE_START_ADDRESS)
+#define FLASH_AREA_RESOURCES_SIZE (RESOURCES_SIZE)
+      /** Area that holds the update OTA **/
+#define FLASH_AREA_RESOURCES_UPDATE_OFFSET (BSP_FEATURE_QSPI_DEVICE_START_ADDRESS + XSPI_AREA_MCUBOOT_OFFSET)
+#define FLASH_AREA_RESOURCESUPDATE_SIZE (RESOURCES_SIZE)
+#define MCUBOOT_MAX_IMG_SECTORS 32
+	  
+  5)  put this filename in the General/Custom mcuboot_config.h field of the MCUboot module in the bootloader project.
+  6) edit src/bootutil_public.c 
+      * find the function boot_write_trailer(
+	  * change uint8_t buf[BOOT_MAX_ALIGN] to buf[256]
+	  * disable the if(align > BOOT_MAX_ALIGN) check.
+  7) edit src/hal_entry.c and add this:
+       extern void set_flash_index(int);    
+	   and add this just before call to boot_go()
+	   set_flash_index(0);
+	    
+  8) Modify the MCUboot Image utilities module in the update project to point to these alternate locations:
+		
+../../x2RA6_boot/src/mcu-tools/include/mcuboot_config/mcuboot_config.h
+../../x2RA6_boot/src/mcu-tools/include/sysflash/sysflash.h		
+../../x2RA6_boot/src/mcu-tools/include/mcuboot_config/mcuboot_logging.h
+
+CHECKPOINT.   Should continue to work as before		
+
+==================================================================================================
+MODIFY things to support multiple images.
+
+  1) Create a common reference project and call it RA6_boot_scripts
+     * create a sub folder named keys.  
+	   Copy the *.pem files in the folder ra/mcu-tools/MCUboot folder.
+	 * create a text file called post_build.bat and copy/paste the following:
+
+srec_cat %2.srec -crop 0x00020000 0x00060000 -offset -0x00020200 -o ap.bin -binary
+srec_cat %2.srec -crop 0x60000000 0x607FFFFF -offset -0x60000200 -o rs.bin -binary
+pause
+python %1\ra\fsp\src\rm_mcuboot_port\rm_mcuboot_port_sign.py  sign --header-size 0x200 --align 128 --max-align 128 --slot-size 0x40000 --max-sectors 8  --pad --pad-header ap.bin ap.bin.signed
+python %1\ra\fsp\src\rm_mcuboot_port\rm_mcuboot_port_sign.py sign --header-size 0x200 --align 128 --max-align 128 --slot-size 0x100000 --max-sectors 32  --pad --pad-header rs.bin rs.bin.signed
+copy /B /Y ap.bin.signed + rs.bin.signed %2.signed.bin
+
+     * create a text file called RA6_boot.bld and copy/paste the following:
+	 
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ddscBootloader>
+    <symbols>
+        <symbol name="FSP_BOOTABLE_IMAGE" value="0x00000001"/>
+        <symbol name="RAM_NS_START" value="0x20040000"/>
+        <symbol name="FLASH_NS_START" value="0x00060000"/>
+        <symbol name="FLASH_IMAGE_END" value="0x00060000"/>
+        <symbol name="FLASH_NS_IMAGE_START" value="0x00060000"/>
+        <symbol name="FLASH_NSC_START" value="0x00060000"/>
+        <symbol name="RAM_NSC_START" value="0x20040000"/>
+        <symbol name="FLASH_IMAGE_LENGTH" value="0x0003FE00"/>
+        <symbol name="XIP_SECONDARY_FLASH_IMAGE_END" value="0x000A0000"/>
+        <symbol name="XIP_SECONDARY_FLASH_IMAGE_START" value="0x00060200"/>
+        <symbol name="FLASH_IMAGE_START" value="0x00020200"/>
+        <symbol name="FLASH_IMAGE_START" value="0x00060000" security="n"/>
+        <symbol name="FSP_BOOTABLE_IMAGE" value="0x00000001" security="n"/>
+        <symbol name="FLASH_IMAGE_LENGTH" value="0x00060000" security="n"/>
+    </symbols>    
+    <images>
+    </images>
+</ddscBootloader>
+
+  2) Edit RA6_primary_L and RA6_update_L projects to reference this common folder:
+      *  properties/C/C++ build/Build Variables:
+           change BootLoaderData to            
+		  ${workspace_loc:RA6_boot_scripts/RA6_boot.bld
+      * properties/C/C++ Build/Environment
+           change MCUBOOT_IMAGE_SIGNING_KEY to 
+		  ${workspace_loc:RA6_boot_scripts}/keys/root-ec-p256.pem	
+      * Copy the my_mcuboot_config.h file from the bootloader src folder to the src folder of the update project.
+	  * add this to the Bootable configuration  properties/C/C++ Build/Settings Build Steps Post-Build:
+	     ..\\..\\RA6_boot_scripts\\post_build.bat "${workspace_loc:x2RA6_boot}" ${BuildArtifactFileBaseName}
+      * Modify the mcu-tools path in the update project's MCUboot image utilities module:
+	  
+	  ../../x2RA6_boot/src/mcu-tools/include/mcuboot_config/mcuboot_config.h
+	  ../../x2RA6_boot/src/mcu-tools/include/sysflash/sysflash.h
+	  ../../x2RA6_boot/src/mcu-tools/include/mcuboot_config/mcuboot_logging.h
+		 
+		 
+primary and update projects should build at this point.
+
+  3) add the resources folder from the lab_resources folder to both primary and update src folders.
+  4) in the downloader_thread_entry.c files in each project add an include:
+      #include "resources/resource.h"
+	 replace the void downloader_thread_entry function with this:
+
+void downloader_thread_entry(void *pvParameters)
+{
+    FSP_PARAMETER_NOT_USED (pvParameters);
+
+       fsp_err_t err;
+       init_qspi();
+       printf((char*) resources.data);
+   /* Open the comms driver */
+      err = comms_open();
+      if (FSP_SUCCESS != err)
+      {
+          /* Stop as comms open failure */
+          while(1)
+          {
+              ;
+          }
+      }
+   //   err =   R_FLASH_HP_Open(&g_flash0_ctrl, &g_flash0_cfg);
+    while(1)
+    {
+        menu();
+        vTaskDelay (1);
+    }
+
+}
+
+  5) edit the resources/resource.c file 
+     * for the primary application this:
+
+#include "hal_data.h"
+#include "resource.h"
+const res_t resources BSP_PLACE_IN_SECTION(".qspi_flash") = {
+  .header = {0}, /* the header is built by the signing tool, here we just carve out space for it */
+  .data = "\r\nRESOURCE FILE FOR PRIMARY\r\n"
+};
+	 
+     * for the update application this:
+
+#include "hal_data.h"
+#include "resource.h"
+const res_t resources BSP_PLACE_IN_SECTION(".qspi_flash") = {
+  .header = {0}, /* the header is built by the signing tool, here we just carve out space for it */
+  .data = "\r\nRESOURCE FILE FOR UPDATE\r\n"
+};
+
+
+BUILD BOTH PROJECTS.
+  
+  6) Add this function to the bootloader hal_entry.c file.
+
+void print_header(struct boot_rsp *p_rsp);
+void print_header(struct boot_rsp *p_rsp)
+{
+    printf("\nboot_rsp rsp = \r\n");
+    printf("  id: %x *hdr: 0x%08X off: 0x%08X\r\n",
+    p_rsp->br_flash_dev_id,
+    (uint32_t) p_rsp->br_hdr,
+    p_rsp->br_image_off);
+    printf("         hdr-> magic: %08X hdr_size: 0x%X\n               img_size: 0x%X load_addr: 0x%08X",
+            p_rsp->br_hdr->ih_magic,
+            p_rsp->br_hdr->ih_hdr_size,
+            p_rsp->br_hdr->ih_img_size,
+            p_rsp->br_hdr->ih_load_addr);
+    printf("\n               flags: 0x%08X\r\n",p_rsp->br_hdr->ih_flags);
+}  
+
+
+  7) Modify the boot loader hal_entry.c   Replace the single call to boot_go with the following code:
+
+    int fstat;
+    struct boot_rsp rsp;
+    struct boot_rsp rsp_resource;
+    printf("\ncalling boot_go(0)\n");
+    set_flash_index(0);
+    fstat = boot_go(&rsp);
+    printf("\n returned from boot_g(0) with status=%d\n",fstat);
+    print_header(&rsp);
+
+    set_flash_index(1);
+    printf("\ncalling boot_go(1)\n");
+    fstat = boot_go(&rsp_resource);
+
+    printf("\n returned from boot_g(1) with status=%d",fstat);
+    print_header(&rsp_resource);
+
+    while(fstat);
+
+    /* Enter the application. */
+    RM_MCUBOOT_PORT_BootApp(&rsp);
+  
+  8) Edit the x2RA6_boot debug launch configuration startup to this:
+  
+  Program Binary x2RA6_boot.elf                                Image and Symbols
+  ${workspace_loc:\RA6_primary_L\Bootable\RA6_primary_L.elf}   Symbols only  0
+  ${workspace_loc:\RA6_primary_L\Bootable\ap.bin.signed}       Raw Binary    020000
+  ${workspace_loc:\RA6_primary_L\Bootable\rs.bin.signed}       Raw Binary    60000000
+  
+  <erase QSPI>
+  
+  Build and debug x2RA6_boot.
+  
+  
