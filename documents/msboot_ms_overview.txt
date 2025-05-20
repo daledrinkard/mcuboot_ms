@@ -84,6 +84,25 @@ x2RA6_boot modifications:
 		 #define MCUBOOT_MAX_IMG_SECTORS    ((RM_MCUBOOT_LARGEST_SECTOR) / \
                                        FLASH_AREA_IMAGE_SECTOR_SIZE)
          #endif
+		 
+  2a) Edit src/mcu-tools/include/sysflash.h
+      * place #ifndef FLASH_AREA_SCRATCH_ID around the definition od FLASH_AREA_SCRATCH_ID 
+	      before:
+		    #ifdef RM_MCUBOOT_PORT_CFG_SECONDARY_USE_XSPI
+            #define FLASH_AREA_SCRATCH_OFFSET     (FLASH_AREA_0_OFFSET + FLASH_AREA_0_SIZE)
+            #else
+            #define FLASH_AREA_SCRATCH_OFFSET     (FLASH_AREA_2_OFFSET + FLASH_AREA_2_SIZE)
+            #endif
+		 after
+		    #ifndef FLASH_AREA_SCRATCH_OFFSET
+		    #ifdef RM_MCUBOOT_PORT_CFG_SECONDARY_USE_XSPI
+            #define FLASH_AREA_SCRATCH_OFFSET     (FLASH_AREA_0_OFFSET + FLASH_AREA_0_SIZE)
+            #else
+            #define FLASH_AREA_SCRATCH_OFFSET     (FLASH_AREA_2_OFFSET + FLASH_AREA_2_SIZE)
+            #endif
+			#endif
+	  * do this for FLASH_AREA_SCRATCH_SIZE and FLASH_DEVICE_SCRATCH    make them "overridable" by my_mcuboot_config.h
+		 
   3) Edit src/flash_map.c
       * find this:
 	     static const struct flash_area flash_map[] =
