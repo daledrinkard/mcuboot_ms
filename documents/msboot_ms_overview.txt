@@ -7,8 +7,8 @@ Rename and import a bootloader project,primary and secondary project pair
 
 BOOTLOADER:
 Resize the Flash Layout in the bootloader configuration,  MCUboot module
-    Bootloader Flash Area Size(bytes)  0x20000
-	Image1 Header size 0x20000
+    Bootloader Flash Area Size(bytes)  0x20000  0x30000 for encrypted support
+	Image1 Header size 0x200
 	Image1 Flash Area Size (Bytes) 0x40000
 	Scratch Flash Area Size (Bytes) 0x40000
 Disable MCUboot encryption
